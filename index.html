@@ -1975,7 +1975,7 @@ function scheduleSend(){closeSendModal();let dt=prompt('Дата/время (н�
 function silentSend(){closeSendModal();let t=$('msg-input').value.trim();if(!t)return;pushMessage(currentChatId,{id:'m'+Date.now(),from:DB.session,text:t,ts:Date.now(),reactions:{},silent:true});$('msg-input').value='';renderMessages();}
 function openMyProfile(){if(me())openProfile(DB.session);}
 const _enterApp=enterApp;enterApp=function(){_enterApp();if(me())$('drawer-nick').textContent='@'+me().nick;};
-const _openProfile=openProfile;openProfile=function(uid){_openProfile(uid);if(uid===DB.session)$('profile-card').insertAdjacentHTML('beforeend','<button class="ghost" onclick="copyMyNick()">📋 Скопировать ник</button><button class="ghost" onclick="showMyQR()">▦ Мой QR-код</button>');};
+const _openProfile=openProfile;openProfile=function(uid){_openProfile(uid);if(uid===DB.session)$('profile-card').insertAdjacentHTML('beforeend','<button class="ghost" onclick="copyMyNick()">📋 Скопировать ник</button><button class="ghost" onclick="showMyQR()">▦QR-код</button>');};
 function copyMyNick(){let n='@'+me().nick;navigator.clipboard?.writeText(n).then(()=>alert('Скопировано: '+n)).catch(()=>prompt('Скопируйте ник',n));}
 function showMyQR(){alert('QR-ссылка профиля: '+location.origin+'/#user='+me().nick+' (в демо QR представлен ссылкой).');}
 let holdTimer=null,holdTriggered=false;document.addEventListener('DOMContentLoaded',()=>{let b=document.querySelector('.composer button:last-child');if(!b)return;b.addEventListener('pointerdown',()=>{holdTriggered=false;holdTimer=setTimeout(()=>{holdTriggered=true;$('send-modal').classList.add('open');},550);});['pointerup','pointercancel','pointerleave'].forEach(e=>b.addEventListener(e,()=>clearTimeout(holdTimer)));b.addEventListener('click',e=>{if(holdTriggered){e.preventDefault();e.stopImmediatePropagation();holdTriggered=false;}},true);});
@@ -1983,15 +1983,6 @@ let holdTimer=null,holdTriggered=false;document.addEventListener('DOMContentLoad
 purgeDeletedAccounts();
 if(DB.session && me()) enterApp();
 </script>
-
-<!-- MAINLAND_FEATURES_REQUEST: оригинальный промт пользователя сохранён в файле
-Удержание записи голосового и видеосообщения, как в Telegram: вверх протянуть и держать не надо (если передумал записывать — свайпнуть влево; только в случае, если протянули вверх). С перемоткой голосового и видеосообщения.
-Выбор файлов нажатием на скрепку: медиа, файлы (документы разных расширений), карта (местоположения), контакты и прочее, что есть у мессенджеров. Также можно выбрать несколько фотографий/видео (если пользователь хочет) и перед отправкой оставить сообщение (по желанию; если нет — просто нажать «Отправить»).
-Если удерживать кнопку «Отправить», появится предложение: отправить в какую-нибудь дату или отправить бесшумно.
-Профиль аккаунта можно скопировать: ник или QR-код.
-Техподдержка: отдельный индивидуальный чат, где пользователь может писать пожелания или проблемы (не видеть чужие сообщения). Это уже созданный чат, который появляется у пользователя в разделах «Чаты» и в настройках. Не добавлять кнопки наверху: разместить кнопки и профиль с ником в отдельном разделе, открываемом нажатием на три точки; список раскрывается плавно и закрывается повторным нажатием. Вместо ника — название мессенджера по центру подходящим шрифтом, раскрывающийся список слева.
-Если пользователь забыл пароль при входе, предусмотреть безопасное восстановление через техподдержку/подтверждение личности и смену пароля, чтобы мошенники не могли украсть аккаунт.
--->
 
 </body>
 </html>
