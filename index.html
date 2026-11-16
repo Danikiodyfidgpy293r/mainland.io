@@ -1113,28 +1113,58 @@ function quoteHTML(q){if(!q)return '';const jump=q.id?`onclick="jumpToMsg('${q.i
 function jumpToMsg(id){const el=$('mw-'+id);if(!el)return;el.scrollIntoView({behavior:'smooth',block:'center'});el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}
 
 function mediaBody(m){
-  if(Array.isArray(m.attachments)&&m.attachments.length){
-    return renderMediaGridHTML(m.attachments);
+  if(Array.isArray(m.attachments) && m.attachments.length){
+    // Если это одиночное фото (isSingle), рендерим как обычную картинку с классом размера
+    if(m.attachments.length === 1 && m.attachments[0].isSingle) {
+      const a = m.attachments[0];
+      if(a.mediaType === 'video') 
+        return `<video class="${mediaSizeClass(a.w,a.h)}" src="${a.media}" onclick="openLightbox('${m.id}', 0)" onerror="mediaError(this)"></video>`;
+      return `<img class="${mediaSizeClass(a.w,a.h)}" src="${a.media}" onerror="mediaError(this)" onclick="openLightbox('${m.id}', 0)">`;
+    }
+    // Иначе рендерим сетку
+    return renderMediaGridHTML(m.attachments, m.id);
   }
-  if(m.mediaType==='voice'){
-    let bars='';for(let i=0;i<26;i++){const h=5+((m.id.charCodeAt(i%m.id.length)+i*7)%15);bars+=`<i style="height:${h}px"></i>`;}
+  
+  if(m.mediaType === 'voice'){
+    let bars = '';
+    for(let i = 0; i < 26; i++){
+      const h = 5 + ((m.id.charCodeAt(i % m.id.length) + i * 7) % 15);
+      bars += `<i style="height:${h}px"></i>`;
+    }
     return `<div class="voice-msg" onclick="toggleVoice('${m.id}', this)"><button class="v-play">▶</button><div class="wave" onclick="seekVoice(event,'${m.id}',this)">${bars}</div><span class="v-dur" id="dur-${m.id}">${fmtDur(m.duration||0)}</span><audio class="voice-audio" id="aud-${m.id}" src="${m.media}" preload="auto" onerror="mediaError(this)"></audio></div>`;
   }
-  if(m.mediaType==='videocircle')return `<div class="vcircle-wrap"><video class="vcircle" id="vc-${m.id}" src="${m.media}" playsinline preload="metadata" onerror="mediaError(this)" onclick="event.stopPropagation();this.muted=false;this.paused?this.play():this.pause()" ondblclick="videoSeek(event,'${m.id}')"></video><div style="font-size:11px;opacity:.6;margin-top:3px;">📹 Видеосообщение · ${fmtDur(m.duration||0)}</div></div>`;
-  if(m.mediaType==='video')return `<video class="${mediaSizeClass(m.w,m.h)}" src="${m.media}" onclick="openLightbox('${m.id}')" onerror="mediaError(this)"></video>`;
-  if(m.mediaType==='document')return `<div class="file-item"><span class="f-ico">📄</span><a href="${m.media}" download="${esc(m.fileName||'document')}">${esc(m.fileName||'Скачать документ')}</a></div>`;
-  if(m.media)return `<img class="${mediaSizeClass(m.w,m.h)}" src="${m.media}" onerror="mediaError(this)" onclick="openLightbox('${m.id}')">`;
-  return esc(typeof m.text==='string'?m.text:'');
+  if(m.mediaType === 'videocircle')
+    return `<div class="vcircle-wrap"><video class="vcircle" id="vc-${m.id}" src="${m.media}" playsinline preload="metadata" onerror="mediaError(this)" onclick="event.stopPropagation();this.muted=false;this.paused?this.play():this.pause()" ondblclick="videoSeek(event,'${m.id}')"></video><div style="font-size:11px;opacity:.6;margin-top:3px;">📹 Видеосообщение · ${fmtDur(m.duration||0)}</div></div>`;
+  if(m.mediaType === 'video')
+    return `<video class="${mediaSizeClass(m.w,m.h)}" src="${m.media}" onclick="openLightbox('${m.id}', 0)" onerror="mediaError(this)"></video>`;
+  if(m.mediaType === 'document')
+    return `<div class="file-item"><span class="f-ico">📄</span><a href="${m.media}" download="${esc(m.fileName||'document')}">${esc(m.fileName||'Скачать документ')}</a></div>`;
+  if(m.media)
+    return `<img class="${mediaSizeClass(m.w,m.h)}" src="${m.media}" onerror="mediaError(this)" onclick="openLightbox('${m.id}', 0)">`;
+    
+  return esc(typeof m.text === 'string' ? m.text : '');
 }
 
-function renderMediaGridHTML(attachments){
-  const n = attachments.length; let gridClass = 'grid-1';
-  if(n === 2) gridClass = 'grid-2'; else if(n === 3) gridClass = 'grid-3'; else if(n >= 4) gridClass = 'grid-many';
+function renderMediaGridHTML(attachments, mId){
+  const n = attachments.length; 
+  let gridClass = 'grid-1';
+  if(n === 2) gridClass = 'grid-2'; 
+  else if(n === 3) gridClass = 'grid-3'; 
+  else if(n >= 4) gridClass = 'grid-many';
+
   const items = attachments.slice(0, 4).map((a, i) => {
     const extra = (i === 3 && n > 4) ? `data-more="+${n - 4}"` : '';
-    if(a.mediaType === 'video') return `<div class="media-item" ${extra}><video src="${a.media}" playsinline onerror="mediaError(this)"></video></div>`;
-    return `<div class="media-item" ${extra}><img src="${a.media}" onerror="mediaError(this)" onclick="openLightbox('${m.id}')"></div>`;
+    // Передаем правильный ID сообщения и ИНДЕКС конкретного вложения
+    if(a.mediaType === 'video') {
+      return `<div class="media-item" ${extra} onclick="openLightbox('${mId}', ${i})">
+        <video src="${a.media}" playsinline onerror="mediaError(this)"></video>
+      </div>`;
+    }
+    return `<div class="media-item" ${extra} onclick="openLightbox('${mId}', ${i})">
+      <img src="${a.media}" onerror="mediaError(this)">
+    </div>`;
   }).join('');
+  
   return `<div class="msg-media-grid ${gridClass}">${items}</div>`;
 }
 function mediaError(el){ el.style.background='var(--soft)'; el.style.display='flex'; el.style.alignItems='center'; el.style.justifyContent='center'; el.innerHTML='⚠️'; el.onclick=null; }
@@ -1273,11 +1303,27 @@ async function selectMedia(input){
   closeAttach();$('caption-modal').classList.add('open');
 }
 async function sendSelectedMedia(noCaption){
-  const caption=noCaption?'':$('caption-input').value.trim();$('caption-modal').classList.remove('open');$('caption-input').value='';
-  if(!chosenMedia.length)return;
-  if(chosenMedia.length===1){const a=chosenMedia[0];await pushMessage(currentChatId,{id:'m'+Date.now(),from:DB.session,text:caption,ts:Date.now(),reactions:{},media:a.media,mediaType:a.mediaType,fileName:a.fileName,w:a.w,h:a.h,replyTo:replyTarget});}
-  else{await pushMessage(currentChatId,{id:'m'+Date.now(),from:DB.session,text:caption,ts:Date.now(),reactions:{},attachments:chosenMedia.slice(),replyTo:replyTarget});}
-  chosenMedia=[];cancelReply();renderMessages();
+  const caption = noCaption ? '' : $('caption-input').value.trim();
+  $('caption-modal').classList.remove('open');
+  $('caption-input').value = '';
+  if(!chosenMedia.length) return;
+  // Всегда отправляем через attachments для единообразия
+  const atts = chosenMedia.map((a, idx) => {
+    if(chosenMedia.length === 1) a.isSingle = true; // Флаг для одиночного рендера
+    return a;
+  });  
+  await pushMessage(currentChatId, {
+    id: 'm' + Date.now(),
+    from: DB.session,
+    text: caption,
+    ts: Date.now(),
+    reactions: {},
+    attachments: atts,
+    replyTo: replyTarget
+  });
+  chosenMedia = [];
+  cancelReply();
+  renderMessages();
 }
 async function sendDocuments(input){
   const files=Array.from(input.files||[]);if(!files.length)return;input.value='';const list=[];
@@ -1361,20 +1407,37 @@ function switchMediaCat(cat){
 }
 
 /* ---------- ЛАЙТБОКС ---------- */
-function openLightbox(mid) {
+function openLightbox(mid, index = 0) {
   const cid = currentChatId || (currentConvo ? currentConvo.id : chatIdWith(currentOtherId));
   const raw = DB.chats[cid] || [];
   const m = raw.find(x => x.id === mid);
   if(!m) return;
+  
   currentLbMsgId = mid;
-  let mediaSrc = m.media; let mediaType = m.mediaType; let title = 'Медиа';
+  let mediaSrc = m.media; 
+  let mediaType = m.mediaType; 
+  let title = 'Медиа';
+  
+  // Если есть attachments, берем именно тот индекс, на который кликнули
   if(m.attachments && m.attachments.length) {
-    mediaSrc = m.attachments[0].media; mediaType = m.attachments[0].mediaType; title = m.attachments[0].fileName || 'Медиа';
-  } else if(m.fileName) { title = m.fileName; }
+    const att = m.attachments[index] || m.attachments[0];
+    mediaSrc = att.media; 
+    mediaType = att.mediaType; 
+    title = att.fileName || 'Медиа';
+  } else if(m.fileName) { 
+    title = m.fileName; 
+  }
+  
   currentLbMedia = mediaSrc;
-  $('lb-title').textContent = title; $('lb-content').innerHTML = '';
-  if(mediaType === 'video' || mediaType === 'videocircle') { $('lb-content').innerHTML = `<video src="${mediaSrc}" controls autoplay playsinline></video>`; }
-  else { $('lb-content').innerHTML = `<img src="${mediaSrc}">`; }
+  $('lb-title').textContent = title; 
+  $('lb-content').innerHTML = '';
+  
+  if(mediaType === 'video' || mediaType === 'videocircle') { 
+    $('lb-content').innerHTML = `<video src="${mediaSrc}" controls autoplay playsinline></video>`; 
+  } else { 
+    $('lb-content').innerHTML = `<img src="${mediaSrc}">`; 
+  }
+  
   $('lb-find-btn').style.display = (currentConvo || currentOtherId) ? 'flex' : 'none';
   $('lightbox').classList.add('open');
 }
