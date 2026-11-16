@@ -458,6 +458,74 @@ body.dark .deleted-banner { background:#3a2326; }
 .att-grid { display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
 .att-grid .att-item { border-radius:10px; overflow:hidden; }
 .att-grid img, .att-grid video { display:block; border-radius:10px; }
+/* === Медиа-сетка === */
+.msg-media-grid {
+  display: grid;
+  gap: 3px;
+  margin-top: 6px;
+  border-radius: 12px;
+  overflow: hidden;
+  width: fit-content;
+  max-width: 100%;
+}
+.msg-media-grid img,
+.msg-media-grid video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: 0; /* скругляется через контейнер */
+}
+.msg-media-grid .media-item { cursor: pointer; overflow: hidden; position: relative; }
+
+/* 1 файл */
+.grid-1 { grid-template-columns: 1fr; width: auto; max-width: 320px; }
+.grid-1 .media-item { max-height: 320px; }
+.grid-1 img, .grid-1 video { max-height: 320px; width: auto; object-fit: contain; background: #000; }
+
+/* 2 файла */
+.grid-2 { grid-template-columns: 1fr 1fr; width: 320px; height: 200px; }
+/* 3 файла: 1 большой слева, 2 маленьких справа */
+.grid-3 { grid-template-columns: 2fr 1fr; grid-template-rows: 1fr 1fr; width: 320px; height: 240px; }
+.grid-3 .media-item:nth-child(1) { grid-row: span 2; }
+/* 4+ файлов: сетка 2x2 */
+.grid-many { grid-template-columns: 1fr 1fr; width: 320px; height: 320px; }
+.grid-many .media-item:nth-child(n+4) { display: none; } /* показываем только первые 4 */
+.grid-many .media-item:nth-child(4)::after {
+  content: attr(data-more);
+  position: absolute; inset: 0; background: rgba(0,0,0,.55);
+  color: #fff; display: flex; align-items: center; justify-content: center;
+  font-size: 20px; font-weight: 700;
+}
+
+/* Кнопка "вниз" */
+.scroll-down-btn {
+  position: fixed;
+  bottom: calc(80px + var(--safe-bottom));
+  right: 20px;
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--accent);
+  border: 1px solid var(--line);
+  box-shadow: 0 4px 16px rgba(0,0,0,.15);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; cursor: pointer;
+  z-index: 50;
+  opacity: 0; pointer-events: none;
+  transform: translateY(10px) scale(.9);
+  transition: opacity .2s, transform .2s;
+  margin: 0; padding: 0;
+}
+.scroll-down-btn.visible { opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
+.scroll-down-btn .unread-indicator {
+  position: absolute; top: -4px; right: -4px;
+  background: var(--danger); color: #fff;
+  border-radius: 10px; min-width: 18px; height: 18px;
+  font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+  padding: 0 4px; display: none;
+}
+.scroll-down-btn .unread-indicator.show { display: block; }
 
 /* ================= АДАПТИВНОСТЬ ================= */
 @media (max-width: 480px) {
@@ -1734,17 +1802,22 @@ function openChatProfile(){
 
 /* ---------- Сообщения ---------- */
 async function renderMessages(){
-  const raw=(DB.chats[currentChatId]||[]).filter(m=>!(m.deletedFor||[]).includes(DB.session));
-  const box=$('messages');
-  box.innerHTML='';
-  if(!raw.length){box.innerHTML='<div class="empty">Напишите первое сообщение 👋</div>';return;}
-  const parts=[];
+  const raw = (DB.chats[currentChatId] || []).filter(m => !(m.deletedFor || []).includes(DB.session));
+  const box = $('messages');
+  box.innerHTML = '';
+  if(!raw.length){ box.innerHTML = '<div class="empty">Напишите первое сообщение 👋</div>'; return; }
+  const parts = [];
   for(const m of raw){
-    const dec=await decryptMessageFields(m);
+    const dec = await decryptMessageFields(m);
     parts.push(renderOneMessage(dec));
   }
-  box.innerHTML=parts.join('');
-  box.scrollTop=box.scrollHeight;
+  box.innerHTML = parts.join('');
+  
+  // Прокручиваем вниз только если пользователь был внизу
+  const isNearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 100;
+  if (isNearBottom) {
+    box.scrollTop = box.scrollHeight;
+  }
 }
 function renderOneMessage(m){
   const t=new Date(m.ts).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
@@ -1780,29 +1853,44 @@ function jumpToMsg(id){
 }
 function mediaBody(m){
   // Группа вложений
-  if(Array.isArray(m.attachments)&&m.attachments.length){
-    return `<div class="att-grid">${m.attachments.map(a=>{
-      if(a.mediaType==='video')
-        return `<div class="att-item"><video class="${mediaSizeClass(a.w,a.h)}" src="${a.media}" controls playsinline onerror="mediaError(this)"></video></div>`;
-      if(a.mediaType==='document')
-        return `<div class="att-item"><div class="file-item"><span class="f-ico">📄</span><a href="${a.media}" download="${esc(a.fileName||'document')}">${esc(a.fileName||'Скачать')}</a></div></div>`;
-      return `<div class="att-item"><img class="${mediaSizeClass(a.w,a.h)}" src="${a.media}" onerror="mediaError(this)" onclick="window.open('${a.media}')"></div>`;
-    }).join('')}</div>`;
+  if(Array.isArray(m.attachments) && m.attachments.length){
+    return renderMediaGridHTML(m.attachments);
   }
-  if(m.mediaType==='voice'){
-    let bars='';
-    for(let i=0;i<26;i++){const h=5+((m.id.charCodeAt(i%m.id.length)+i*7)%15);bars+=`<i style="height:${h}px"></i>`;}
+  if(m.mediaType === 'voice'){
+    let bars = '';
+    for(let i = 0; i < 26; i++){
+      const h = 5 + ((m.id.charCodeAt(i % m.id.length) + i * 7) % 15);
+      bars += `<i style="height:${h}px"></i>`;
+    }
     return `<div class="voice-msg" onclick="toggleVoice('${m.id}', this)"><button class="v-play">▶</button><div class="wave" onclick="seekVoice(event,'${m.id}',this)">${bars}</div><span class="v-dur" id="dur-${m.id}">${fmtDur(m.duration||0)}</span><audio class="voice-audio" id="aud-${m.id}" src="${m.media}" preload="auto" onerror="mediaError(this)"></audio></div>`;
   }
-  if(m.mediaType==='videocircle')
+  if(m.mediaType === 'videocircle')
     return `<div class="vcircle-wrap"><video class="vcircle" id="vc-${m.id}" src="${m.media}" playsinline preload="metadata" onerror="mediaError(this)" onclick="event.stopPropagation();this.muted=false;this.paused?this.play():this.pause()" ondblclick="videoSeek(event,'${m.id}')"></video><div style="font-size:11px;opacity:.6;margin-top:3px;">📹 Видеосообщение · ${fmtDur(m.duration||0)}</div></div>`;
-  if(m.mediaType==='video')
+  if(m.mediaType === 'video')
     return `<video class="${mediaSizeClass(m.w,m.h)}" src="${m.media}" controls playsinline onerror="mediaError(this)"></video>`;
-  if(m.mediaType==='document')
+  if(m.mediaType === 'document')
     return `<div class="file-item"><span class="f-ico">📄</span><a href="${m.media}" download="${esc(m.fileName||'document')}">${esc(m.fileName||'Скачать документ')}</a></div>`;
   if(m.media)
     return `<img class="${mediaSizeClass(m.w,m.h)}" src="${m.media}" onerror="mediaError(this)" onclick="window.open('${m.media}')">`;
-  return esc(typeof m.text==='string'?m.text:'');
+  return esc(typeof m.text === 'string' ? m.text : '');
+}
+
+// Новая функция для отрисовки сетки
+function renderMediaGridHTML(attachments){
+  const n = attachments.length;
+  let gridClass = 'grid-1';
+  if(n === 2) gridClass = 'grid-2';
+  else if(n === 3) gridClass = 'grid-3';
+  else if(n >= 4) gridClass = 'grid-many';
+
+  const items = attachments.slice(0, 4).map((a, i) => {
+    const extra = (i === 3 && n > 4) ? `data-more="+${n - 4}"` : '';
+    if(a.mediaType === 'video')
+      return `<div class="media-item" ${extra}><video src="${a.media}" playsinline controls onerror="mediaError(this)"></video></div>`;
+    return `<div class="media-item" ${extra}><img src="${a.media}" onerror="mediaError(this)" onclick="window.open('${a.media}')"></div>`;
+  }).join('');
+
+  return `<div class="msg-media-grid ${gridClass}">${items}</div>`;
 }
 function mediaError(el){el.outerHTML='<div style="font-size:13px;opacity:.7;padding:6px 0;">⚠️ Не удалось воспроизвести</div>';}
 
@@ -1980,16 +2068,37 @@ function startReply(mid){
 }
 function cancelReply(){replyTarget=null;$('reply-bar').classList.remove('open');$('reply-bar').innerHTML='';}
 function toggleEmojiBar(mid){const el=$('emoji-'+mid);if(el)el.classList.toggle('open');}
-async function toggleReaction(mid,emoji){
-  const chats=DB.chats;
-  const msgs=chats[currentChatId]||[];
-  const m=msgs.find(x=>x.id===mid);if(!m)return;
-  m.reactions=m.reactions||{};
-  const ids=m.reactions[emoji]||[];
-  if(ids.includes(DB.session))m.reactions[emoji]=ids.filter(x=>x!==DB.session);
-  else m.reactions[emoji]=[...ids,DB.session];
-  if(!m.reactions[emoji].length)delete m.reactions[emoji];
-  DB.chats=chats;
+async function toggleReaction(mid, emoji){
+  const chats = DB.chats;
+  const msgs = chats[currentChatId] || [];
+  const m = msgs.find(x => x.id === mid);
+  if(!m) return;
+  m.reactions = m.reactions || {};
+  
+  // Проверяем, есть ли уже реакция от текущего пользователя на это сообщение
+  let myCurrentReaction = null;
+  for(const [e, ids] of Object.entries(m.reactions)){
+    if(ids.includes(DB.session)){ myCurrentReaction = e; break; }
+  }
+
+  // Удаляем старую реакцию пользователя (если есть)
+  if(myCurrentReaction){
+    m.reactions[myCurrentReaction] = m.reactions[myCurrentReaction].filter(x => x !== DB.session);
+    if(!m.reactions[myCurrentReaction].length) delete m.reactions[myCurrentReaction];
+  }
+
+  // Если кликнули по той же реакции — просто убрали её (выходим)
+  if(myCurrentReaction === emoji) {
+    DB.chats = chats;
+    renderMessages();
+    return;
+  }
+
+  // Добавляем новую
+  m.reactions[emoji] = m.reactions[emoji] || [];
+  m.reactions[emoji].push(DB.session);
+
+  DB.chats = chats;
   renderMessages();
 }
 function deleteMessage(mid){
@@ -2402,6 +2511,64 @@ function startTimers(){
     showScreen('scr-login');
   }
 })();
+  /* === Прокрутка чата: кнопка "вниз" === */
+(function setupScrollButton() {
+  const messagesEl = $('messages');
+  if (!messagesEl) return;
+
+  // Создаём кнопку
+  const btn = document.createElement('button');
+  btn.className = 'scroll-down-btn';
+  btn.innerHTML = '↓<span class="unread-indicator" id="unread-indicator"></span>';
+  btn.onclick = () => {
+    messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' });
+    btn.classList.remove('visible');
+    const ind = $('unread-indicator');
+    if(ind) ind.classList.remove('show');
+  };
+
+  // Вставляем в composer (или в body, но лучше в экран чата)
+  const chatScreen = $('scr-chat');
+  if (chatScreen) chatScreen.appendChild(btn);
+  
+  // Обработчик прокрутки
+  messagesEl.addEventListener('scroll', () => {
+    const scrollTop = messagesEl.scrollTop;
+    const scrollHeight = messagesEl.scrollHeight;
+    const clientHeight = messagesEl.clientHeight;
+    const distanceToBottom = scrollHeight - scrollTop - clientHeight;
+    
+    // Если пользователь прокрутил вверх больше чем на 100px — показываем кнопку
+    if (distanceToBottom > 100) {
+      btn.classList.add('visible');
+    } else {
+      btn.classList.remove('visible');
+      const ind = $('unread-indicator');
+      if(ind) ind.classList.remove('show');
+    }
+  });
+})();
+
+// Функция для обновления индикатора новых сообщений (можно вызывать в renderMessages)
+function updateScrollIndicator() {
+  const btn = document.querySelector('.scroll-down-btn');
+  const ind = $('unread-indicator');
+  if (!btn || !ind) return;
+  
+  const messagesEl = $('messages');
+  const scrollTop = messagesEl.scrollTop;
+  const scrollHeight = messagesEl.scrollHeight;
+  const clientHeight = messagesEl.clientHeight;
+  const distanceToBottom = scrollHeight - scrollTop - clientHeight;
+  
+  // Если пользователь не внизу и пришли новые сообщения
+  if (distanceToBottom > 100) {
+    btn.classList.add('visible');
+    // Можно показать количество непрочитанных (если ведётся подсчёт)
+    ind.textContent = '';
+    ind.classList.remove('show');
+  }
+  }
 </script>
 </body>
 </html>
