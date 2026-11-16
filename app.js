@@ -406,7 +406,7 @@ async function doRegister(){
   if(!regState||!regState.contact)return err('reg3-err',t('contact_req'));
   const contact=normContact(regState.contact);if(DB.users.some(u=>normContact(u.contact).toLowerCase()===contact.toLowerCase()))return err('reg3-err',t('contact_exists'));
   const user={id:'u'+Date.now(),contact,nick,name,pass:p1,created:Date.now(),privacy:{find:'all',lastseen:'all',groups:'all'}};
-  DB.users=[...DB.users,user];DB.session=user.id;encryptEnabled=(DB.encryption==='1');
+  DB.users=[...DB.users,user];DB.session=user.id;saveSession();encryptEnabled=(DB.encryption==='1');
   localStorage.setItem('ml_session_fallback', DB.session); // Дублируем сессию
   await initEncryption(p1);await DB.flush();ping();await enterApp();
 }
@@ -427,6 +427,7 @@ async function doLogin(){
 async function doLogout(){
   if(incomingTimer){clearInterval(incomingTimer);incomingTimer=null;}
   DB.session=null;localStorage.removeItem('ml_session_fallback');await DB.flush();Crypto.clearAll();sessionKey=null;$('login-pass').value='';showScreen('scr-login');
+  localStorage.removeItem('ml_session_fallback');
 }
 function deleteAccount(){
   const reason=prompt(t('del_reason_prompt'));
@@ -947,22 +948,27 @@ function switchMediaCat(cat){
 let touchStartX = 0;
 let touchEndX = 0;
 
-function openLightbox(mid, index = 0) {
+async function openLightbox(mid, index = 0) {
   if (DB.clickOpen === '0') return;
   const cid = currentChatId || (currentConvo ? currentConvo.id : chatIdWith(currentOtherId));
   const raw = DB.chats[cid] || [];
   const m = raw.find(x => x.id === mid);
   if(!m) return;
   
+  // Если шифрование включено, расшифровываем сообщение
+  const decrypted = encryptEnabled ? await decryptMessageFields(m) : m;
+  
   currentLbMsgId = mid;
   
-  if(m.attachments && m.attachments.length) {
-    currentLbAttachments = m.attachments;
+  if(decrypted.attachments && decrypted.attachments.length) {
+    currentLbAttachments = decrypted.attachments;
   } else {
-    currentLbAttachments = [{ media: m.media, mediaType: m.mediaType, fileName: m.fileName }];
+    currentLbAttachments = [{ media: decrypted.media, mediaType: decrypted.mediaType, fileName: decrypted.fileName }];
   }
   
-  currentLbIndex = index;
+  // Проверяем, что индекс не выходит за пределы
+  currentLbIndex = Math.max(0, Math.min(index, currentLbAttachments.length - 1));
+  
   renderLightboxContent();
   
   $('lb-find-btn').style.display = (currentConvo || currentOtherId) ? 'flex' : 'none';
@@ -973,7 +979,14 @@ function openLightbox(mid, index = 0) {
 
 function renderLightboxContent() {
   const att = currentLbAttachments[currentLbIndex];
-  const mediaSrc = att.media;
+  if (!att) return;
+  
+  let mediaSrc = att.media;
+  // Если mediaSrc - объект (зашифровано), показываем заглушку
+  if (mediaSrc && typeof mediaSrc === 'object') {
+    mediaSrc = '[Зашифровано]';
+  }
+  
   const mediaType = att.mediaType;
   const title = att.fileName || t('media');
   
@@ -986,7 +999,7 @@ function renderLightboxContent() {
   if(mediaType === 'video' || mediaType === 'videocircle') { 
     wrap.innerHTML = `<video src="${mediaSrc}" controls autoplay playsinline></video>`; 
   } else { 
-    wrap.innerHTML = `<img src="${mediaSrc}">`; 
+    wrap.innerHTML = `<img src="${mediaSrc}" onerror="this.alt='Ошибка загрузки'">`; 
   }
   
   $('lb-prev').style.display = currentLbIndex > 0 ? 'flex' : 'none';
@@ -1176,23 +1189,47 @@ window.addEventListener('beforeunload', () => {
   }
 });
 
+// Надежное сохранение сессии
+function saveSession() {
+  if (DB.session) {
+    localStorage.setItem('ml_session_fallback', DB.session);
+  } else {
+    localStorage.removeItem('ml_session_fallback');
+  }
+}
+
 /* ============================================================
    BOOT
    ============================================================ */
 (async function boot(){
   try{
     await DB.init();
-    // Восстанавливаем сессию из localStorage, если в IndexedDB пусто
-    const fallbackSession = localStorage.getItem('ml_session_fallback');
-    if (fallbackSession && (!DB.session || !me())) {
-        DB.session = fallbackSession;
+    
+    // Всегда берем сессию из localStorage, если она там есть
+    const savedSession = localStorage.getItem('ml_session_fallback');
+    if (savedSession) {
+        DB.session = savedSession;
     }
     
     applyTheme();applyMute();applyFontSize();applyWallpaper();
     setLanguage(DB.language);
+    
     if('Notification' in window&&DB.notif==='1'&&Notification.permission==='default'){Notification.requestPermission();}
-    if(DB.session&&me()&&!me().deleted){
-      $('drawer-nick').textContent='@'+me().nick;ensureSupportChat();encryptEnabled=(DB.encryption==='1');openMain();startTimers();
-    } else { DB.session=null; showScreen('scr-login'); }
-  } catch(e){ console.error('Boot failed:',e); showScreen('scr-login'); }
+    
+    // Проверяем, существует ли пользователь с такой сессией
+    if(DB.session && me() && !me().deleted){
+      $('drawer-nick').textContent='@'+me().nick;
+      ensureSupportChat();
+      encryptEnabled=(DB.encryption==='1');
+      openMain();
+      startTimers();
+    } else { 
+      DB.session=null; 
+      localStorage.removeItem('ml_session_fallback');
+      showScreen('scr-login'); 
+    }
+  } catch(e){ 
+    console.error('Boot failed:',e); 
+    showScreen('scr-login'); 
+  }
 })();
