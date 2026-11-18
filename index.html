@@ -267,14 +267,19 @@
   <div class="messages" id="messages"></div>
   <div class="reply-bar" id="reply-bar"></div>
   <div class="composer">
-    <input type="file" id="file-input" accept="image/*,video/*" multiple onchange="selectMedia(this)">
-    <input type="file" id="doc-input" multiple onchange="sendDocuments(this)">
-    <input type="file" id="avatar-input" accept="image/*" onchange="saveAvatar(this)">
-    <button class="attach" onclick="openAttach()">📎</button>
-    <button class="attach" id="btn-voice" title="Удерживайте для записи">🎤</button>
-    <button class="attach" id="btn-video" title="Удерживайте для записи">🎥</button>
-    <input type="text" id="msg-input" placeholder="Сообщение..." oninput="handleTyping()" onkeydown="if(event.key==='Enter')sendMsg()" data-i18n-placeholder="msg_placeholder">
+  <input type="file" id="file-input" accept="image/*,video/*" multiple onchange="selectMedia(this)">
+  <input type="file" id="doc-input" multiple onchange="sendDocuments(this)">
+  <input type="file" id="avatar-input" accept="image/*" onchange="saveAvatar(this)">
+  
+  <button class="attach" onclick="openAttach()" title="Прикрепить">📎</button>
+  
+  <input type="text" id="msg-input" placeholder="Сообщение..." oninput="handleTyping()" onkeydown="if(event.key==='Enter')sendMsg()" data-i18n-placeholder="msg_placeholder">
+  
+  <div class="composer-actions">
+    <button class="attach-icon" id="btn-voice" title="Голосовое">🎤</button>
+    <button class="attach-icon" id="btn-video" title="Видеосообщение">📹</button>
     <button id="btn-send" onclick="sendMsg()">➤</button>
+  </div>
   </div>
 </div>
 
@@ -415,6 +420,32 @@
   </div>
 </div>
 
+  <!-- Выбор контакта -->
+<div class="modal-overlay" id="contact-picker-modal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal">
+    <h3 data-i18n="pick_contact">Отправить контакт</h3>
+    <div class="list" id="contact-picker-list"></div>
+    <button class="modal-close" onclick="$('contact-picker-modal').classList.remove('open')" data-i18n="cancel">Отмена</button>
+  </div>
+</div>
+
+<!-- Локация -->
+<div class="modal-overlay" id="location-modal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal">
+    <h3 data-i18n="send_geo">Отправить геолокацию</h3>
+    <div class="modal-body">
+      <p class="set-note" data-i18n="geo_hint">Введите координаты (Широта, Долгота) или ссылку на карту.</p>
+      <input id="loc-lat" placeholder="Широта (например, 55.7558)" type="number" step="any">
+      <input id="loc-lon" placeholder="Долгота (например, 37.6173)" type="number" step="any">
+      <button onclick="getMyLocation()" class="ghost" style="margin-top:8px;" data-i18n="detect_geo">📍 Определить мое местоположение</button>
+    </div>
+    <div class="del-opts" style="margin-top:8px;">
+      <button class="del-me" onclick="sendCustomLocation()" data-i18n="send">Отправить</button>
+      <button class="modal-close" onclick="$('location-modal').classList.remove('open')" data-i18n="cancel">Отмена</button>
+    </div>
+  </div>
+</div>
+  
 <script src="app.js" defer></script>
 </body>
 </html>
