@@ -1,3 +1,4 @@
+let currentLbChatId = null;
 /* ============================================================
    I18N (Локализация)
    ============================================================ */
@@ -418,8 +419,11 @@ async function doLogin(){
 }
 async function doLogout(){
   if(incomingTimer){clearInterval(incomingTimer);incomingTimer=null;}
-  DB.session=null;await DB.flush();Crypto.clearAll();sessionKey=null;$('login-pass').value='';showScreen('scr-login');
-}
+  DB.session=null;
+  localStorage.removeItem('ml_session_fallback'); // Очищаем
+  await DB.flush();
+  Crypto.clearAll();sessionKey=null;$('login-pass').value='';showScreen('scr-login');
+     }
 function deleteAccount(){
   const reason=prompt(t('del_reason_prompt'));
   if(reason===null)return;if(!reason.trim())return alert(t('reason_req'));
@@ -959,18 +963,36 @@ function collectMedia(cid){
   }
   return { media, voice, files, links };
 }
-function renderMediaGrid(cid){
-  const { media } = collectMedia(cid);
+async function renderMediaGrid(cid){
+  const raw = (DB.chats[cid] || []).filter(m => !m.deletedForAll && !(m.deletedFor || []).includes(DB.session));
   const grid = $('media-grid');
-  if(!media.length){ grid.innerHTML = `<div class="empty">${t('no_media')}</div>`; return; }
+  grid.innerHTML = '<div class="empty">Загрузка...</div>';
   
-  grid.innerHTML = media.map(a => {
-    if(a.mediaType === 'video' || a.mediaType === 'videocircle') {
-      return `<video src="${a.media}" onclick="openLightbox('${a.mid}', ${a.attIndex})" onerror="mediaError(this)"></video>`;
+  const mediaItems = [];
+  for(const m of raw){
+    let dec = m;
+    // Расшифровываем, если нужно
+    if (encryptEnabled) dec = await decryptMessageFields(m);
+    
+    if(Array.isArray(dec.attachments)){
+      for(let i=0; i < dec.attachments.length; i++){
+        const a = dec.attachments[i];
+        if(a.mediaType !== 'document' && a.mediaType !== 'voice' && a.mediaType !== 'videocircle' && a.media) {
+          mediaItems.push({ ...a, mid: m.id, attIndex: i });
+        }
+      }
+    } else if (dec.media && dec.mediaType !== 'document' && dec.mediaType !== 'voice' && dec.mediaType !== 'videocircle') {
+      mediaItems.push({ media: dec.media, mediaType: dec.mediaType, mid: m.id, attIndex: 0 });
     }
-    return `<img src="${a.media}" onclick="openLightbox('${a.mid}', ${a.attIndex})" onerror="mediaError(this)">`;
+  }
+  
+  if(!mediaItems.length) { grid.innerHTML = '<div class="empty">Медиа пока нет</div>'; return; }
+  
+  grid.innerHTML = mediaItems.map(a => {
+    if(a.mediaType === 'video') return `<video src="${a.media}" onclick="openLightbox('${a.mid}', ${a.attIndex})"></video>`;
+    return `<img src="${a.media}" onclick="openLightbox('${a.mid}', ${a.attIndex})">`;
   }).join('');
-}
+     }
 function renderVoiceList(cid){
   const {voice}=collectMedia(cid);const box=$('links-list');
   if(!voice.length){box.innerHTML=`<div class="empty">${t('no_voice')}</div>`;return;}
@@ -1033,8 +1055,14 @@ let touchStartX = 0;
 let touchEndX = 0;
 
 async function openLightbox(mid, index = 0) {
+async function openLightbox(mid, index = 0) {
   if (DB.clickOpen === '0') return;
-  const cid = currentChatId || (currentConvo ? currentConvo.id : chatIdWith(currentOtherId));
+  
+  // Ищем в текущем чате, либо в чате профиля
+  let cid = currentChatId;
+  if (!cid && currentOtherId) cid = chatIdWith(currentOtherId);
+  if (!cid && currentConvo) cid = currentConvo.id;
+  
   const raw = DB.chats[cid] || [];
   const m = raw.find(x => x.id === mid);
   if(!m) return;
@@ -1042,6 +1070,7 @@ async function openLightbox(mid, index = 0) {
   const decrypted = encryptEnabled ? await decryptMessageFields(m) : m;
   
   currentLbMsgId = mid;
+  currentLbChatId = cid; // Запоминаем, из какого чата открыли
   
   if(decrypted.attachments && decrypted.attachments.length) {
     currentLbAttachments = decrypted.attachments;
@@ -1052,38 +1081,35 @@ async function openLightbox(mid, index = 0) {
   currentLbIndex = Math.max(0, Math.min(index, currentLbAttachments.length - 1));
   renderLightboxContent();
   
-  $('lb-find-btn').style.display = (currentConvo || currentOtherId) ? 'flex' : 'none';
+  $('lb-find-btn').style.display = 'flex';
   $('lightbox').classList.add('open');
   document.body.classList.add('lb-open');
-}
+                                                                     }
 
 function renderLightboxContent() {
   const att = currentLbAttachments[currentLbIndex];
   if (!att) return;
-  
   let mediaSrc = att.media;
   if (mediaSrc && typeof mediaSrc === 'object') {
-    mediaSrc = '[Зашифровано]';
+    mediaSrc = ''; // Если объект - значит зашифровано, покажем заглушку
   }
-  
   const mediaType = att.mediaType;
   const title = att.fileName || t('media');
-  
   currentLbMedia = mediaSrc;
   $('lb-title').textContent = `${title} (${currentLbIndex + 1}/${currentLbAttachments.length})`;
-  
   const wrap = $('lb-media-wrap');
-  wrap.innerHTML = '';
-  
-  if(mediaType === 'video' || mediaType === 'videocircle') { 
+  wrap.innerHTML = ''; 
+  if(!mediaSrc) {
+    wrap.innerHTML = `<div style="color:#fff; text-align:center;">Ошибка: файл зашифрован или поврежден</div>`;
+  } else if(mediaType === 'video' || mediaType === 'videocircle') { 
     wrap.innerHTML = `<video src="${mediaSrc}" controls autoplay playsinline></video>`; 
   } else { 
-    wrap.innerHTML = `<img src="${mediaSrc}" onerror="this.alt='Ошибка загрузки'">`; 
+    wrap.innerHTML = `<img src="${mediaSrc}">`; 
   }
   
   $('lb-prev').style.display = currentLbIndex > 0 ? 'flex' : 'none';
   $('lb-next').style.display = currentLbIndex < currentLbAttachments.length - 1 ? 'flex' : 'none';
-}
+                                  }
 
 function lightboxNav(dir) {
   if(!currentLbAttachments) return;
@@ -1254,9 +1280,13 @@ function startTimers(){
    ============================================================ */
 (async function boot(){
   try{
+    // 1. Сначала берем сессию из localStorage (до инициализации БД)
+    const savedSession = localStorage.getItem('ml_session_fallback');
+    
+    // 2. Инициализируем БД
     await DB.init();
     
-    const savedSession = localStorage.getItem('ml_session_fallback');
+    // 3. Принудительно восстанавливаем сессию
     if (savedSession) {
         DB.session = savedSession;
     }
@@ -1266,13 +1296,17 @@ function startTimers(){
     
     if('Notification' in window&&DB.notif==='1'&&Notification.permission==='default'){Notification.requestPermission();}
     
-    if(DB.session && me() && !me().deleted){
-      $('drawer-nick').textContent='@'+me().nick;
+    // 4. Проверяем, есть ли такой пользователь
+    const currentUser = DB.users.find(u => u.id === DB.session);
+    
+    if(currentUser && !currentUser.deleted){
+      $('drawer-nick').textContent='@'+currentUser.nick;
       ensureSupportChat();
       encryptEnabled=(DB.encryption==='1');
       openMain();
       startTimers();
     } else { 
+      // Если пользователь не найден, сбрасываем
       DB.session=null; 
       localStorage.removeItem('ml_session_fallback');
       showScreen('scr-login'); 
